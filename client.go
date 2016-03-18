@@ -1,329 +1,117 @@
-// Copyright 2009 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package protorpc
 
 import (
-	"bufio"
-	"errors"
-	proto "github.com/gogo/protobuf/proto"
+	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"net"
-	"net/http"
+	"net/rpc"
 	"sync"
-	"time"
 )
 
-// ServerError represents an error that has been returned from
-// the remote side of the RPC connection.
-type ServerError string
+type clientCodec struct {
+	dec *json.Decoder // for reading JSON values
+	enc *json.Encoder // for writing JSON values
+	c   io.Closer
 
-func (e ServerError) Error() string {
-	return string(e)
+	// temporary work space
+	req  clientRequest
+	resp clientResponse
+
+	// JSON-RPC responses include the request id but not the request method.
+	// Package rpc expects both.
+	// We save the request method in pending when sending a request
+	// and then look it up by request ID when filling out the rpc Response.
+	mutex   sync.Mutex        // protects pending
+	pending map[uint64]string // map request id to method name
 }
 
-var (
-	ErrShutdown = errors.New("connection is shut down")
-	ErrTimeout  = errors.New("call timeout")
-)
-
-// Call represents an active RPC.
-type Call struct {
-	ServiceMethod string        // The name of the service and method to call.
-	Args          proto.Message // The argument to the function (*struct).
-	Reply         proto.Message // The reply from the function (*struct).
-	Error         error         // After completion, the error status.
-	Done          chan *Call    // Strobes when call is complete.
-}
-
-// Client represents an RPC Client.
-// There may be multiple outstanding Calls associated
-// with a single Client, and a Client may be used by
-// multiple goroutines simultaneously.
-type Client struct {
-	codec ClientCodec
-
-	reqMutex sync.Mutex // protects following
-	request  Request
-
-	mutex    sync.Mutex // protects following
-	seq      uint64
-	pending  map[uint64]*Call
-	closing  bool // user has called Close
-	shutdown bool // server has told us to stop
-}
-
-// A ClientCodec implements writing of RPC requests and
-// reading of RPC responses for the client side of an RPC session.
-// The client calls WriteRequest to write a request to the connection
-// and calls ReadResponseHeader and ReadResponseBody in pairs
-// to read responses.  The client calls Close when finished with the
-// connection. ReadResponseBody may be called with a nil
-// argument to force the body of the response to be read and then
-// discarded.
-type ClientCodec interface {
-	// WriteRequest must be safe for concurrent use by multiple goroutines.
-	WriteRequest(*Request, proto.Message) error
-	ReadResponseHeader(*Response) error
-	ReadResponseBody(proto.Message) error
-
-	Close() error
-}
-
-func (client *Client) send(call *Call) {
-	client.reqMutex.Lock()
-	defer client.reqMutex.Unlock()
-
-	// Register this call.
-	client.mutex.Lock()
-	if client.shutdown || client.closing {
-		call.Error = ErrShutdown
-		client.mutex.Unlock()
-		call.done()
-		return
+// NewClientCodec returns a new rpc.ClientCodec using JSON-RPC on conn.
+func NewClientCodec(conn io.ReadWriteCloser) rpc.ClientCodec {
+	return &clientCodec{
+		dec:     json.NewDecoder(conn),
+		enc:     json.NewEncoder(conn),
+		c:       conn,
+		pending: make(map[uint64]string),
 	}
-	seq := client.seq
-	client.seq++
-	client.pending[seq] = call
-	client.mutex.Unlock()
+}
 
-	// Encode and send the request.
-	client.request.Seq = seq
-	client.request.ServiceMethod = call.ServiceMethod
-	err := client.codec.WriteRequest(&client.request, call.Args)
-	if err != nil {
-		client.mutex.Lock()
-		call = client.pending[seq]
-		delete(client.pending, seq)
-		client.mutex.Unlock()
-		if call != nil {
-			call.Error = err
-			call.done()
+type clientRequest struct {
+	Method string         `json:"method"`
+	Params [1]interface{} `json:"params"`
+	Id     uint64         `json:"id"`
+}
+
+func (c *clientCodec) WriteRequest(r *rpc.Request, param interface{}) error {
+	c.mutex.Lock()
+	c.pending[r.Seq] = r.ServiceMethod
+	c.mutex.Unlock()
+	c.req.Method = r.ServiceMethod
+	c.req.Params[0] = param
+	c.req.Id = r.Seq
+	return c.enc.Encode(&c.req)
+}
+
+type clientResponse struct {
+	Id     uint64           `json:"id"`
+	Result *json.RawMessage `json:"result"`
+	Error  interface{}      `json:"error"`
+}
+
+func (r *clientResponse) reset() {
+	r.Id = 0
+	r.Result = nil
+	r.Error = nil
+}
+
+func (c *clientCodec) ReadResponseHeader(r *rpc.Response) error {
+	c.resp.reset()
+	if err := c.dec.Decode(&c.resp); err != nil {
+		return err
+	}
+
+	c.mutex.Lock()
+	r.ServiceMethod = c.pending[c.resp.Id]
+	delete(c.pending, c.resp.Id)
+	c.mutex.Unlock()
+
+	r.Error = ""
+	r.Seq = c.resp.Id
+	if c.resp.Error != nil || c.resp.Result == nil {
+		x, ok := c.resp.Error.(string)
+		if !ok {
+			return fmt.Errorf("invalid error %v", c.resp.Error)
 		}
+		if x == "" {
+			x = "unspecified error"
+		}
+		r.Error = x
 	}
+	return nil
 }
 
-func (client *Client) input() {
-	var err error
-	var response Response
-	for err == nil {
-		response = Response{}
-		err = client.codec.ReadResponseHeader(&response)
-		if err != nil {
-			break
-		}
-		seq := response.Seq
-		client.mutex.Lock()
-		call := client.pending[seq]
-		delete(client.pending, seq)
-		client.mutex.Unlock()
-
-		switch {
-		case call == nil:
-			// We've got no pending call. That usually means that
-			// WriteRequest partially failed, and call was already
-			// removed; response is a server telling us about an
-			// error reading request body. We should still attempt
-			// to read error body, but there's no one to give it to.
-			err = client.codec.ReadResponseBody(nil)
-			if err != nil {
-				err = errors.New("reading error body: " + err.Error())
-			}
-		case response.Error != "":
-			// We've got an error response. Give this to the request;
-			// any subsequent requests will get the ReadResponseBody
-			// error if there is one.
-			call.Error = ServerError(response.Error)
-			err = client.codec.ReadResponseBody(nil)
-			if err != nil {
-				err = errors.New("reading error body: " + err.Error())
-			}
-			call.done()
-		default:
-			err = client.codec.ReadResponseBody(call.Reply)
-			if err != nil {
-				call.Error = errors.New("reading body " + err.Error())
-			}
-			call.done()
-		}
+func (c *clientCodec) ReadResponseBody(x interface{}) error {
+	if x == nil {
+		return nil
 	}
-	// Terminate pending calls.
-	client.reqMutex.Lock()
-	client.mutex.Lock()
-	client.shutdown = true
-	closing := client.closing
-	if err == io.EOF {
-		if closing {
-			err = ErrShutdown
-		} else {
-			err = io.ErrUnexpectedEOF
-		}
-	}
-	for _, call := range client.pending {
-		call.Error = err
-		call.done()
-	}
-	client.mutex.Unlock()
-	client.reqMutex.Unlock()
-	if debugLog && err != io.EOF && !closing {
-		log.Println("rpc: client protocol error:", err)
-	}
+	return json.Unmarshal(*c.resp.Result, x)
 }
 
-func (call *Call) done() {
-	select {
-	case call.Done <- call:
-		// ok
-	default:
-		// We don't want to block here.  It is the caller's responsibility to make
-		// sure the channel has enough buffer space. See comment in Go().
-		if debugLog {
-			log.Println("rpc: discarding Call reply due to insufficient Done chan capacity")
-		}
-	}
+func (c *clientCodec) Close() error {
+	return c.c.Close()
 }
 
-// NewClient returns a new Client to handle requests to the
+// NewClient returns a new rpc.Client to handle requests to the
 // set of services at the other end of the connection.
-// It adds a buffer to the write side of the connection so
-// the header and payload are sent as a unit.
-func NewClient(conn io.ReadWriteCloser) *Client {
-	return NewClientWithCodec(NewPbClientCodec(conn, bufio.NewReader(conn), bufio.NewWriter(conn)))
+func NewClient(conn io.ReadWriteCloser) *rpc.Client {
+	return rpc.NewClientWithCodec(NewClientCodec(conn))
 }
 
-// NewClientWithCodec is like NewClient but uses the specified
-// codec to encode requests and decode responses.
-func NewClientWithCodec(codec ClientCodec) *Client {
-	client := &Client{
-		codec:   codec,
-		pending: make(map[uint64]*Call),
-	}
-	go client.input()
-	return client
-}
-
-// type gobClientCodec struct {
-// 	rwc    io.ReadWriteCloser
-// 	dec    *gob.Decoder
-// 	enc    *gob.Encoder
-// 	encBuf *bufio.Writer
-// }
-
-// func (c *gobClientCodec) WriteRequest(r *Request, body interface{}) (err error) {
-// 	if err = c.enc.Encode(r); err != nil {
-// 		return
-// 	}
-// 	if err = c.enc.Encode(body); err != nil {
-// 		return
-// 	}
-// 	return c.encBuf.Flush()
-// }
-
-// func (c *gobClientCodec) ReadResponseHeader(r *Response) error {
-// 	return c.dec.Decode(r)
-// }
-
-// func (c *gobClientCodec) ReadResponseBody(body interface{}) error {
-// 	return c.dec.Decode(body)
-// }
-
-// func (c *gobClientCodec) Close() error {
-// 	return c.rwc.Close()
-// }
-
-// DialHTTP connects to an HTTP RPC server at the specified network address
-// listening on the default HTTP RPC path.
-func DialHTTP(network, address string) (*Client, error) {
-	return DialHTTPPath(network, address, DefaultRPCPath)
-}
-
-// DialHTTPPath connects to an HTTP RPC server
-// at the specified network address and path.
-func DialHTTPPath(network, address, path string) (*Client, error) {
-	var err error
+// Dial connects to a JSON-RPC server at the specified network address.
+func Dial(network, address string) (*rpc.Client, error) {
 	conn, err := net.Dial(network, address)
 	if err != nil {
 		return nil, err
 	}
-	io.WriteString(conn, "CONNECT "+path+" HTTP/1.0\n\n")
-
-	// Require successful HTTP response
-	// before switching to RPC protocol.
-	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
-	if err == nil && resp.Status == connected {
-		return NewClient(conn), nil
-	}
-	if err == nil {
-		err = errors.New("unexpected HTTP response: " + resp.Status)
-	}
-	conn.Close()
-	return nil, &net.OpError{
-		Op:   "dial-http",
-		Net:  network + " " + address,
-		Addr: nil,
-		Err:  err,
-	}
-}
-
-// Dial connects to an RPC server at the specified network address.
-func Dial(network, address string) (*Client, error) {
-	conn, err := net.Dial(network, address)
-	if err != nil {
-		return nil, err
-	}
-	return NewClient(conn), nil
-}
-
-func (client *Client) Close() error {
-	client.mutex.Lock()
-	if client.closing {
-		client.mutex.Unlock()
-		return ErrShutdown
-	}
-	client.closing = true
-	client.mutex.Unlock()
-	return client.codec.Close()
-}
-
-// Go invokes the function asynchronously.  It returns the Call structure representing
-// the invocation.  The done channel will signal when the call is complete by returning
-// the same Call object.  If done is nil, Go will allocate a new channel.
-// If non-nil, done must be buffered or Go will deliberately crash.
-func (client *Client) Go(serviceMethod string, args proto.Message, reply proto.Message, done chan *Call) *Call {
-	call := new(Call)
-	call.ServiceMethod = serviceMethod
-	call.Args = args
-	call.Reply = reply
-	if done == nil {
-		done = make(chan *Call, 10) // buffered.
-	} else {
-		// If caller passes done != nil, it must arrange that
-		// done has enough buffer for the number of simultaneous
-		// RPCs that will be using that channel.  If the channel
-		// is totally unbuffered, it's best not to run at all.
-		if cap(done) == 0 {
-			log.Panic("rpc: done channel is unbuffered")
-		}
-	}
-	call.Done = done
-	client.send(call)
-	return call
-}
-
-// Call invokes the named function, waits for it to complete, and returns its error status.
-func (client *Client) Call(serviceMethod string, args proto.Message, reply proto.Message) error {
-	call := <-client.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
-	return call.Error
-}
-
-// CallWithTimeout invokes the named function, waits for it to complete or timeout, and returns its error status.
-func (client *Client) CallWithTimeout(serviceMethod string, args proto.Message, reply proto.Message, d time.Duration) error {
-	select {
-	case call := <-client.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done:
-		return call.Error
-	case <-time.After(d):
-		return ErrTimeout
-	}
+	return NewClient(conn), err
 }
