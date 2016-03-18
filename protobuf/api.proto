@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package protobuf;
+
+import "gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.sizer_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+
+// 实例
+message Test {
+    string method = 4;
+    string id = 1;
+    string name = 2;
+    int32 state = 3;
+}

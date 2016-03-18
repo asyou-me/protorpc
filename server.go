@@ -1,8 +1,10 @@
 package protorpc
 
 import (
-	"encoding/json"
+	"bytes"
 	"errors"
+	//"github.com/gogo/protobuf/proto"
+	"encoding/binary"
 	"io"
 	"net/rpc"
 	"sync"
@@ -11,66 +13,50 @@ import (
 var errMissingParams = errors.New("jsonrpc: request body missing params")
 
 type serverCodec struct {
-	dec *json.Decoder // for reading JSON values
-	enc *json.Encoder // for writing JSON values
-	c   io.Closer
+	c io.ReadWriteCloser
+
+	methods map[uint64]string
 
 	// temporary work space
-	req serverRequest
+	req []byte
 
-	// JSON-RPC clients can use arbitrary json values as request IDs.
-	// Package rpc expects uint64 request IDs.
-	// We assign uint64 sequence numbers to incoming requests
-	// but save the original request ID in the pending map.
-	// When rpc responds, we use the sequence number in
-	// the response to find the original request ID.
 	mutex   sync.Mutex // protects seq, pending
 	seq     uint64
-	pending map[uint64]*json.RawMessage
+	pending map[uint64]*[]byte
 }
 
 // NewServerCodec returns a new rpc.ServerCodec using JSON-RPC on conn.
-func NewServerCodec(conn io.ReadWriteCloser) rpc.ServerCodec {
+func NewServerCodec(conn io.ReadWriteCloser, methods *map[uint64]string) rpc.ServerCodec {
 	return &serverCodec{
-		dec:     json.NewDecoder(conn),
-		enc:     json.NewEncoder(conn),
 		c:       conn,
-		pending: make(map[uint64]*json.RawMessage),
+		pending: make(map[uint64]*[]byte),
+		methods: *methods,
 	}
-}
-
-type serverRequest struct {
-	Method string           `json:"method"`
-	Params *json.RawMessage `json:"params"`
-	Id     *json.RawMessage `json:"id"`
-}
-
-func (r *serverRequest) reset() {
-	r.Method = ""
-	r.Params = nil
-	r.Id = nil
-}
-
-type serverResponse struct {
-	Id     *json.RawMessage `json:"id"`
-	Result interface{}      `json:"result"`
-	Error  interface{}      `json:"error"`
 }
 
 func (c *serverCodec) ReadRequestHeader(r *rpc.Request) error {
-	c.req.reset()
-	if err := c.dec.Decode(&c.req); err != nil {
+
+	b := make([]byte, 128)
+	_, err := c.c.Read(b)
+
+	if err != nil {
 		return err
 	}
-	r.ServiceMethod = c.req.Method
 
-	// JSON request id can be any JSON value;
-	// RPC package expects uint64.  Translate to
-	// internal uint64 and save JSON on the side.
+	c.req = b[16:]
+
+	method_buf := bytes.NewBuffer(b[8:16])
+	var method uint64
+	binary.Read(method_buf, binary.BigEndian, &method)
+
+	r.ServiceMethod = c.methods[method]
+
 	c.mutex.Lock()
 	c.seq++
-	c.pending[c.seq] = c.req.Id
-	c.req.Id = nil
+
+	id := b[:8]
+
+	c.pending[c.seq] = &id
 	r.Seq = c.seq
 	c.mutex.Unlock()
 
@@ -78,22 +64,18 @@ func (c *serverCodec) ReadRequestHeader(r *rpc.Request) error {
 }
 
 func (c *serverCodec) ReadRequestBody(x interface{}) error {
+
 	if x == nil {
 		return nil
 	}
-	if c.req.Params == nil {
-		return errMissingParams
-	}
-	// JSON params is array value.
-	// RPC params is struct.
-	// Unmarshal into array containing struct for now.
-	// Should think about making RPC more general.
-	var params [1]interface{}
-	params[0] = x
-	return json.Unmarshal(*c.req.Params, &params)
+
+	p := x.(codec_type)
+	p.Unmarshal(c.req)
+
+	return nil
 }
 
-var null = json.RawMessage([]byte("null"))
+var null = []byte("null")
 
 func (c *serverCodec) WriteResponse(r *rpc.Response, x interface{}) error {
 	c.mutex.Lock()
@@ -109,13 +91,31 @@ func (c *serverCodec) WriteResponse(r *rpc.Response, x interface{}) error {
 		// Invalid request so no id.  Use JSON null.
 		b = &null
 	}
-	resp := serverResponse{Id: b}
-	if r.Error == "" {
-		resp.Result = x
-	} else {
-		resp.Error = r.Error
+
+	// 写入id
+	b_buf := bytes.NewBuffer(*b)
+
+	if x == nil {
+		// 将数据写入tcp数据流
+		_, err := c.c.Write(b_buf.Bytes())
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	return c.enc.Encode(resp)
+
+	// 写入主要数据
+	p := x.(codec_type)
+	b2, err := p.Marshal()
+	if err != nil {
+		return err
+	}
+	b_buf.Write(b2)
+
+	// 将数据写入tcp数据流
+	_, err = c.c.Write(b_buf.Bytes())
+
+	return err
 }
 
 func (c *serverCodec) Close() error {
@@ -125,6 +125,6 @@ func (c *serverCodec) Close() error {
 // ServeConn runs the JSON-RPC server on a single connection.
 // ServeConn blocks, serving the connection until the client hangs up.
 // The caller typically invokes ServeConn in a go statement.
-func ServeConn(conn io.ReadWriteCloser) {
-	rpc.ServeCodec(NewServerCodec(conn))
+func ServeConn(conn io.ReadWriteCloser, methods *map[uint64]string) {
+	rpc.ServeCodec(NewServerCodec(conn, methods))
 }
