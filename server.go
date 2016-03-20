@@ -1,130 +1,134 @@
+// Copyright 2013 <chaishushan{AT}gmail.com>. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package protorpc
 
 import (
-	"bytes"
 	"errors"
-	//"github.com/gogo/protobuf/proto"
-	"encoding/binary"
+	"fmt"
 	"io"
 	"net/rpc"
 	"sync"
+
+	wire "github.com/asyoume/protorpc/protobuf"
+	"github.com/golang/protobuf/proto"
 )
 
-var errMissingParams = errors.New("jsonrpc: request body missing params")
-
 type serverCodec struct {
-	c io.ReadWriteCloser
-
-	methods map[uint64]string
+	r io.Reader
+	w io.Writer
+	c io.Closer
 
 	// temporary work space
-	req []byte
+	reqHeader wire.RequestHeader
 
+	// Package rpc expects uint64 request IDs.
+	// We assign uint64 sequence numbers to incoming requests
+	// but save the original request ID in the pending map.
+	// When rpc responds, we use the sequence number in
+	// the response to find the original request ID.
 	mutex   sync.Mutex // protects seq, pending
 	seq     uint64
-	pending map[uint64]*[]byte
+	pending map[uint64]uint64
 }
 
-// NewServerCodec returns a new rpc.ServerCodec using JSON-RPC on conn.
-func NewServerCodec(conn io.ReadWriteCloser, methods *map[uint64]string) rpc.ServerCodec {
+// NewServerCodec returns a serverCodec that communicates with the ClientCodec
+// on the other end of the given conn.
+func NewServerCodec(conn io.ReadWriteCloser) rpc.ServerCodec {
 	return &serverCodec{
+		r:       conn,
+		w:       conn,
 		c:       conn,
-		pending: make(map[uint64]*[]byte),
-		methods: *methods,
+		pending: make(map[uint64]uint64),
 	}
 }
 
 func (c *serverCodec) ReadRequestHeader(r *rpc.Request) error {
-
-	b := make([]byte, 128)
-	_, err := c.c.Read(b)
-
+	header := wire.RequestHeader{}
+	err := readRequestHeader(c.r, &header)
 	if err != nil {
 		return err
 	}
 
-	c.req = b[16:]
-
-	method_buf := bytes.NewBuffer(b[8:16])
-	var method uint64
-	binary.Read(method_buf, binary.BigEndian, &method)
-
-	r.ServiceMethod = c.methods[method]
-
 	c.mutex.Lock()
 	c.seq++
-
-	id := b[:8]
-
-	c.pending[c.seq] = &id
+	c.pending[c.seq] = header.Id
+	r.ServiceMethod = header.Method
 	r.Seq = c.seq
 	c.mutex.Unlock()
 
+	c.reqHeader = header
 	return nil
 }
 
 func (c *serverCodec) ReadRequestBody(x interface{}) error {
-
 	if x == nil {
 		return nil
 	}
+	request, ok := x.(proto.Message)
+	if !ok {
+		return fmt.Errorf(
+			"protorpc.ServerCodec.ReadRequestBody: %T does not implement proto.Message",
+			x,
+		)
+	}
 
-	p := x.(codec_type)
-	p.Unmarshal(c.req)
+	err := readRequestBody(c.r, &c.reqHeader, request)
+	if err != nil {
+		return nil
+	}
 
+	c.reqHeader = wire.RequestHeader{}
 	return nil
 }
 
-var null = []byte("null")
+// A value sent as a placeholder for the server's response value when the server
+// receives an invalid request. It is never decoded by the client since the Response
+// contains an error when it is used.
+var invalidRequest = struct{}{}
 
 func (c *serverCodec) WriteResponse(r *rpc.Response, x interface{}) error {
+	var response proto.Message
+	if x != nil {
+		var ok bool
+		if response, ok = x.(proto.Message); !ok {
+			if _, ok = x.(struct{}); !ok {
+				c.mutex.Lock()
+				delete(c.pending, r.Seq)
+				c.mutex.Unlock()
+				return fmt.Errorf(
+					"protorpc.ServerCodec.WriteResponse: %T does not implement proto.Message",
+					x,
+				)
+			}
+		}
+	}
+
 	c.mutex.Lock()
-	b, ok := c.pending[r.Seq]
+	id, ok := c.pending[r.Seq]
 	if !ok {
 		c.mutex.Unlock()
-		return errors.New("invalid sequence number in response")
+		return errors.New("protorpc: invalid sequence number in response")
 	}
 	delete(c.pending, r.Seq)
 	c.mutex.Unlock()
 
-	if b == nil {
-		// Invalid request so no id.  Use JSON null.
-		b = &null
-	}
-
-	// 写入id
-	b_buf := bytes.NewBuffer(*b)
-
-	if x == nil {
-		// 将数据写入tcp数据流
-		_, err := c.c.Write(b_buf.Bytes())
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
-	// 写入主要数据
-	p := x.(codec_type)
-	b2, err := p.Marshal()
+	err := writeResponse(c.w, id, r.Error, response)
 	if err != nil {
 		return err
 	}
-	b_buf.Write(b2)
 
-	// 将数据写入tcp数据流
-	_, err = c.c.Write(b_buf.Bytes())
-
-	return err
+	return nil
 }
 
-func (c *serverCodec) Close() error {
-	return c.c.Close()
+func (s *serverCodec) Close() error {
+	return s.c.Close()
 }
 
-// ServeConn runs the JSON-RPC server on a single connection.
+// ServeConn runs the Protobuf-RPC server on a single connection.
 // ServeConn blocks, serving the connection until the client hangs up.
 // The caller typically invokes ServeConn in a go statement.
-func ServeConn(conn io.ReadWriteCloser, methods *map[uint64]string) {
-	rpc.ServeCodec(NewServerCodec(conn, methods))
+func ServeConn(conn io.ReadWriteCloser) {
+	rpc.ServeCodec(NewServerCodec(conn))
 }

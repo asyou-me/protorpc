@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"github.com/asyoume/protorpc"
 	"github.com/asyoume/protorpc/protobuf"
+	"time"
 )
 
 func main() {
-	cli, err := protorpc.Dial("tcp", "127.0.0.1:1234", protobuf.HanderMap)
+	cli, err := protorpc.Dial("tcp", "127.0.0.1:1234")
 
 	if err != nil {
 		fmt.Println(err)
@@ -15,21 +16,20 @@ func main() {
 
 	defer cli.Close()
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 1000; i++ {
+		go func(i int64) {
+			args := &protobuf.Test{}
+			args.A = i
+			args.B = i + 1
+			reply := new(protobuf.Test)
 
-		args := &protobuf.Test{}
-		args.Id = "qinqiu"
-		reply := new(protobuf.Test)
-
-		err = cli.Call("TestHandler.Test", args, reply)
-		if err != nil {
-			fmt.Errorf("Add: expected no error but got string %q", err.Error())
-		}
-		fmt.Println(reply)
-		fmt.Println("==============")
+			err = cli.Call("TestHandler.Test", args, reply)
+			if err != nil {
+				fmt.Errorf("Add: expected no error but got string %q", err.Error())
+			}
+			fmt.Println(reply)
+			fmt.Println("==============")
+		}(int64(i))
 	}
-}
-
-type Reply struct {
-	C int
+	time.Sleep(5 * time.Second)
 }

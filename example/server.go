@@ -30,7 +30,7 @@ func main() {
 			if err != nil {
 				fmt.Println("conn:", err)
 			}
-			go protorpc.ServeConn(conn, protobuf.HanderMap_)
+			go protorpc.ServeConn(conn)
 		}
 	}()
 	<-close_chan
@@ -40,8 +40,14 @@ func main() {
 type TestHandler struct {
 }
 
+var i = 0
+
 func (h *TestHandler) Test(arg *protobuf.Test, reply *protobuf.Test) error {
-	fmt.Println("test", arg)
-	reply.Id = "jieguo"
+	//fmt.Println("test", arg)
+	reply.A = arg.A
+	reply.B = arg.B
+	i++
+	reply.C = reply.A + reply.B
+	fmt.Println("i:", i)
 	return nil
 }

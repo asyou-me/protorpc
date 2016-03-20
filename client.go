@@ -1,24 +1,30 @@
+// Copyright 2013 <chaishushan{AT}gmail.com>. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package protorpc
 
 import (
-	//"github.com/gogo/protobuf/proto"
-	"bytes"
-	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"net/rpc"
-	//"os"
 	"sync"
+	"time"
+
+	wire "github.com/asyoume/protorpc/protobuf"
+	"github.com/golang/protobuf/proto"
 )
 
 type clientCodec struct {
-	c       io.ReadWriteCloser
-	methods map[string]uint64
+	r io.Reader
+	w io.Writer
+	c io.Closer
 
 	// temporary work space
-	resp []byte
+	respHeader wire.ResponseHeader
 
-	// RPC responses include the request id but not the request method.
+	// Protobuf-RPC responses include the request id but not the request method.
 	// Package rpc expects both.
 	// We save the request method in pending when sending a request
 	// and then look it up by request ID when filling out the rpc Response.
@@ -26,98 +32,104 @@ type clientCodec struct {
 	pending map[uint64]string // map request id to method name
 }
 
-// NewClientCodec returns a new rpc.ClientCodec using JSON-RPC on conn.
-func NewClientCodec(conn io.ReadWriteCloser, methods *map[string]uint64) rpc.ClientCodec {
+// NewClientCodec returns a new rpc.ClientCodec using Protobuf-RPC on conn.
+func NewClientCodec(conn io.ReadWriteCloser) rpc.ClientCodec {
 	return &clientCodec{
+		r:       conn,
+		w:       conn,
 		c:       conn,
 		pending: make(map[uint64]string),
-		methods: *methods,
 	}
 }
 
 func (c *clientCodec) WriteRequest(r *rpc.Request, param interface{}) error {
-
 	c.mutex.Lock()
 	c.pending[r.Seq] = r.ServiceMethod
 	c.mutex.Unlock()
 
-	r.Seq = r.Seq
-
-	b_buf := bytes.NewBuffer([]byte{})
-	// 写入8字节Request id
-	binary.Write(b_buf, binary.BigEndian, r.Seq)
-	// 写入8字节Request Method
-	binary.Write(b_buf, binary.BigEndian, c.methods[r.ServiceMethod])
-
-	// 定义数据的格式为 codec_type
-	p := param.(codec_type)
-	b, err := p.Marshal()
+	var request proto.Message
+	if param != nil {
+		var ok bool
+		if request, ok = param.(proto.Message); !ok {
+			return fmt.Errorf(
+				"protorpc.ClientCodec.WriteRequest: %T does not implement proto.Message",
+				param,
+			)
+		}
+	}
+	err := writeRequest(c.w, r.Seq, r.ServiceMethod, request)
 	if err != nil {
 		return err
 	}
-	// 写入包主体
-	b_buf.Write(b)
 
-	// 将数据写入tcp数据流
-	_, err = c.c.Write(b_buf.Bytes())
-
-	return err
+	return nil
 }
 
 func (c *clientCodec) ReadResponseHeader(r *rpc.Response) error {
-	b := make([]byte, 1024)
-	_, err := c.c.Read(b)
-
+	header := wire.ResponseHeader{}
+	err := readResponseHeader(c.r, &header)
 	if err != nil {
 		return err
 	}
 
-	// 读取8字节Response id
-	c.resp = b[8:]
-
-	// []byte to uint64
-	b_buf := bytes.NewBuffer(b[:8])
-	var id uint64
-	binary.Read(b_buf, binary.BigEndian, &id)
-
 	c.mutex.Lock()
-	r.ServiceMethod = c.pending[id]
-	delete(c.pending, id)
+	r.Seq = header.Id
+	r.Error = header.Error
+	r.ServiceMethod = c.pending[r.Seq]
+	delete(c.pending, r.Seq)
 	c.mutex.Unlock()
 
-	// 将得到的Response id给Response
-	r.Seq = id
-
+	c.respHeader = header
 	return nil
 }
 
 func (c *clientCodec) ReadResponseBody(x interface{}) error {
-	if x == nil {
+	var response proto.Message
+	if x != nil {
+		var ok bool
+		response, ok = x.(proto.Message)
+		if !ok {
+			return fmt.Errorf(
+				"protorpc.ClientCodec.ReadResponseBody: %T does not implement proto.Message",
+				x,
+			)
+		}
+	}
+
+	err := readResponseBody(c.r, &c.respHeader, response)
+	if err != nil {
 		return nil
 	}
 
-	// 转换字节到结构体
-	p := x.(codec_type)
-	p.Unmarshal(c.resp)
-
+	c.respHeader = wire.ResponseHeader{}
 	return nil
 }
 
+// Close closes the underlying connection.
 func (c *clientCodec) Close() error {
 	return c.c.Close()
 }
 
 // NewClient returns a new rpc.Client to handle requests to the
 // set of services at the other end of the connection.
-func NewClient(conn io.ReadWriteCloser, methods *map[string]uint64) *rpc.Client {
-	return rpc.NewClientWithCodec(NewClientCodec(conn, methods))
+func NewClient(conn io.ReadWriteCloser) *rpc.Client {
+	return rpc.NewClientWithCodec(NewClientCodec(conn))
 }
 
-// Dial connects to a JSON-RPC server at the specified network address.
-func Dial(network, address string, methods *map[string]uint64) (*rpc.Client, error) {
+// Dial connects to a Protobuf-RPC server at the specified network address.
+func Dial(network, address string) (*rpc.Client, error) {
 	conn, err := net.Dial(network, address)
 	if err != nil {
 		return nil, err
 	}
-	return NewClient(conn, methods), err
+	return NewClient(conn), err
+}
+
+// DialTimeout connects to a Protobuf-RPC server at the specified network address.
+func DialTimeout(network, address string, timeout time.Duration) (*rpc.Client, error) {
+	conn, err := net.DialTimeout(network, address, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return NewClient(conn), err
 }
