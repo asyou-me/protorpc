@@ -9,6 +9,6 @@ while [ -h "$SOURCE"  ]; do
 done
 DIR="$( cd -P "$( dirname "$SOURCE"  )" && pwd  )"
 
-gogoproto_path="$GOPATH/src/github.com/"
+gogoproto_path="$GOPATH/src/"
 
 protoc3 "$DIR/../protobuf/api.proto" --gofast_out="$DIR/../protobuf" --proto_path=${gogoproto_path} --proto_path="$DIR/../protobuf"
