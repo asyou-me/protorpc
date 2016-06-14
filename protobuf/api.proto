@@ -34,7 +34,7 @@ message ResponseHeader {
 
 // 测试类型
 message Test {
-    int64 A = 1;
-    int64 B = 2;
-    int64 C = 3;
+  int64 A = 1;
+  int64 B = 2;
+  int64 C = 3;
 }
