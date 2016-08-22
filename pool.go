@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Pool rpc 连接池
 type Pool struct {
 	Dial          func() (*rpc.Client, error)
 	TestFunc      func(c *rpc.Client, t time.Time) error
@@ -14,12 +15,14 @@ type Pool struct {
 	TestOnReturn  bool
 	TestWhileIdle bool
 	Max           int
-	Connected     int
-	using         int
-	list          *List
-	mutex         *sync.RWMutex
+	// 正在使用
+	Connected int
+	// 空闲连接
+	list  *List
+	mutex *sync.RWMutex
 }
 
+// NewPool 新建一个连接池
 func NewPool(Dial func() (*rpc.Client, error),
 	TestFunc func(c *rpc.Client, t time.Time) error, Max int) *Pool {
 	pool := &Pool{
@@ -31,73 +34,78 @@ func NewPool(Dial func() (*rpc.Client, error),
 	return pool
 }
 
-func (this *Pool) Init() {
-	this.list = NewList()
-	this.mutex = new(sync.RWMutex)
-	if this.Max == 0 {
-		this.Max = 10
+// Init 初始化一个连接池
+func (pool *Pool) Init() {
+	pool.list = NewList()
+	pool.mutex = new(sync.RWMutex)
+	if pool.Max == 0 {
+		pool.Max = 10
 	}
 }
 
-func (this *Pool) Call(serviceMethod string, args interface{}, reply interface{}) (err error) {
-	element, err := this.get()
+// Call 调用远程的方法
+func (pool *Pool) Call(serviceMethod string, args interface{}, reply interface{}) (err error) {
+	element, err := pool.get()
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err == nil {
-			this.put(element)
+			pool.put(element)
 		} else {
-			this.test(element)
+			pool.test(element)
 		}
 	}()
 	err = element.Value.Call(serviceMethod, args, reply)
 	return
 }
 
-func (this *Pool) get() (*Element, error) {
-	this.mutex.Lock()
-	item := this.list.Front()
-	connected := this.Connected
+// 从连接池获取一个连接
+func (pool *Pool) get() (*Element, error) {
+	pool.mutex.Lock()
+	item := pool.list.Front()
+	connected := pool.Connected
 	if item == nil {
-		if connected >= this.Max*2 {
-			this.mutex.Unlock()
+		if connected >= pool.Max*2 {
+			pool.mutex.Unlock()
 			return nil, errors.New("连接数到达上限")
 		}
-		cli, err := this.Dial()
+		cli, err := pool.Dial()
 		if err != nil {
-			this.mutex.Unlock()
+			pool.mutex.Unlock()
 			return nil, err
 		}
-		this.Connected = this.Connected + 1
-		this.mutex.Unlock()
+		pool.Connected = pool.Connected + 1
+		pool.mutex.Unlock()
 		return &Element{
 			Value: cli,
 		}, nil
 	}
-	this.mutex.Unlock()
+	pool.mutex.Unlock()
 	return item, nil
 }
 
-func (this *Pool) put(c *Element) {
-	this.mutex.Lock()
-	connected := this.Connected
-	this.mutex.Unlock()
-	if connected >= this.Max {
-		this.mutex.Lock()
-		this.Connected = this.Connected - 1
-		this.mutex.Unlock()
+// 将一个连接放到连接池
+func (pool *Pool) put(c *Element) {
+	pool.mutex.Lock()
+	connected := pool.Connected
+	pool.mutex.Unlock()
+	if connected >= pool.Max {
+		pool.mutex.Lock()
+		pool.Connected = pool.Connected - 1
+		pool.mutex.Unlock()
 		c.Value.Close()
 	} else {
-		this.mutex.Lock()
-		this.list.PushBack(c.Value)
-		this.mutex.Unlock()
+		pool.mutex.Lock()
+		pool.list.PushBack(c.Value)
+		pool.mutex.Unlock()
 	}
 }
 
-func (this *Pool) test(c *Element) {
-	this.mutex.Lock()
+// 当一个连接错误时会用用此方法测试这个连接
+func (pool *Pool) test(c *Element) {
+	pool.mutex.Lock()
 	c.Value.Close()
-	this.list.Remove(c)
-	this.mutex.Unlock()
+	pool.list.Remove(c)
+	pool.mutex.Unlock()
 }
