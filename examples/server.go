@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"net"
 	"net/rpc"
 
@@ -19,7 +20,7 @@ func main() {
 	rpc.Register(h)
 
 	//  监听端口
-	l, e := net.Listen("tcp", ":1234")
+	l, e := net.Listen("tcp", ":1236")
 	if e != nil {
 		fmt.Println("listen error:", e)
 	}

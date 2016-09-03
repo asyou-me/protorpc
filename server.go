@@ -44,6 +44,7 @@ func NewServerCodec(conn io.ReadWriteCloser) rpc.ServerCodec {
 	}
 }
 
+// ReadRequestHeader 读取请求头
 func (c *serverCodec) ReadRequestHeader(r *rpc.Request) error {
 	header := wire.RequestHeader{}
 	err := readRequestHeader(c.r, &header)
@@ -62,6 +63,7 @@ func (c *serverCodec) ReadRequestHeader(r *rpc.Request) error {
 	return nil
 }
 
+// 读取请求内容
 func (c *serverCodec) ReadRequestBody(x interface{}) error {
 	if x == nil {
 		return nil
@@ -88,6 +90,7 @@ func (c *serverCodec) ReadRequestBody(x interface{}) error {
 // contains an error when it is used.
 var invalidRequest = struct{}{}
 
+// WriteResponse 写入结果到客户端
 func (c *serverCodec) WriteResponse(r *rpc.Response, x interface{}) error {
 	var response proto.Message
 	if x != nil {
@@ -122,8 +125,9 @@ func (c *serverCodec) WriteResponse(r *rpc.Response, x interface{}) error {
 	return nil
 }
 
-func (s *serverCodec) Close() error {
-	return s.c.Close()
+// Close 关闭一个服务
+func (c *serverCodec) Close() error {
+	return c.c.Close()
 }
 
 // ServeConn runs the Protobuf-RPC server on a single connection.

@@ -14,6 +14,7 @@ import (
 	"github.com/golang/snappy"
 )
 
+// 写入请求数据到 io.Writer
 func writeRequest(w io.Writer, id uint64, method string, request proto.Message) error {
 	// marshal request
 	pbRequest := []byte{}
@@ -59,6 +60,7 @@ func writeRequest(w io.Writer, id uint64, method string, request proto.Message) 
 	return nil
 }
 
+// 读取请求中的头信息
 func readRequestHeader(r io.Reader, header *wire.RequestHeader) (err error) {
 	// recv header (more)
 	pbHeader, err := recvFrame(r)
@@ -75,6 +77,7 @@ func readRequestHeader(r io.Reader, header *wire.RequestHeader) (err error) {
 	return nil
 }
 
+// 读取请求包内容
 func readRequestBody(r io.Reader, header *wire.RequestHeader, request proto.Message) error {
 	// recv body (end)
 	compressedPbRequest, err := recvFrame(r)
@@ -108,6 +111,7 @@ func readRequestBody(r io.Reader, header *wire.RequestHeader, request proto.Mess
 	return nil
 }
 
+// 写入结果到客户端
 func writeResponse(w io.Writer, id uint64, serr string, response proto.Message) (err error) {
 	// clean response if error
 	if serr != "" {
@@ -154,6 +158,7 @@ func writeResponse(w io.Writer, id uint64, serr string, response proto.Message) 
 	return nil
 }
 
+// 读取结果的头信息
 func readResponseHeader(r io.Reader, header *wire.ResponseHeader) error {
 	// recv header (more)
 	pbHeader, err := recvFrame(r)
@@ -170,6 +175,7 @@ func readResponseHeader(r io.Reader, header *wire.ResponseHeader) error {
 	return nil
 }
 
+// 读取结果的内容
 func readResponseBody(r io.Reader, header *wire.ResponseHeader, response proto.Message) error {
 	// recv body (end)
 	compressedPbResponse, err := recvFrame(r)
