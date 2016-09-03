@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/asyoume/protorpc"
-	"github.com/asyoume/protorpc/protobuf"
 	"time"
+
+	"github.com/asyou-me/protorpc"
+	"github.com/asyou-me/protorpc/protobuf"
 )
 
 func main() {

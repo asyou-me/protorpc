@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	wire "github.com/asyoume/protorpc/protobuf"
+	wire "github.com/asyou-me/protorpc/protobuf"
 	"github.com/golang/protobuf/proto"
 )
 

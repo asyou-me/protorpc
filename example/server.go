@@ -1,12 +1,13 @@
 package main
 
 import (
-	"github.com/asyoume/protorpc/protobuf"
-	//gogo_proto "github.com/gogo/protobuf/proto"
 	"fmt"
-	"github.com/asyoume/protorpc"
 	"net"
 	"net/rpc"
+
+	"github.com/asyou-me/protorpc/protobuf"
+
+	"github.com/asyou-me/protorpc"
 )
 
 func main() {
