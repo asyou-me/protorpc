@@ -1,7 +1,3 @@
-// Copyright 2013 <chaishushan{AT}gmail.com>. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package protorpc
 
 import (
@@ -65,8 +61,8 @@ func (c *serverCodec) ReadRequestHeader(r *rpc.Request) error {
 	c.reqHeader = header
 
 	err = c.auth(&AuthorizationHeader{
-		Authorization: header.Token,
-		ServiceMethod: header.Method,
+		Token:  header.Token,
+		Method: header.Method,
 	})
 	if err != nil {
 		go func() {

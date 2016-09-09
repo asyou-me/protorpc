@@ -48,6 +48,7 @@ func (pool *Pool) Call(serviceMethod string, args interface{}, reply interface{}
 	if err != nil {
 		return err
 	}
+	// 使用完成之后将连接送回连接池
 	defer func() {
 		if err == nil {
 			pool.put(element)
