@@ -19,7 +19,7 @@ func client() {
 			fmt.Println(err)
 		}
 	}()
-	cli, err := protorpc.Dial("tcp", "127.0.0.1:1236")
+	cli, err := protorpc.Dial("tcp", "127.0.0.1:1236", "token")
 	if err != nil {
 		fmt.Println(err)
 	}
