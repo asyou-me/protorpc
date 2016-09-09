@@ -5,7 +5,7 @@ import (
 	"hash/crc32"
 	"io"
 
-	wire "github.com/asyou-me/protorpc/protobuf"
+	wire "github.com/asyou-me/protorpc/types"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
 )

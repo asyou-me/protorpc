@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/asyou-me/protorpc"
-	"github.com/asyou-me/protorpc/protobuf"
+	"github.com/asyou-me/protorpc/types"
 )
 
 func main() {
@@ -33,10 +33,10 @@ func client() {
 					fmt.Println(err)
 				}
 			}()
-			args := &protobuf.Test{}
+			args := &types.Test{}
 			args.A = i
 			args.B = i + 1
-			reply := new(protobuf.Test)
+			reply := new(types.Test)
 			err = cli.Call("TestHandler.Test", args, reply)
 			if err != nil {
 				fmt.Println(err.Error())
@@ -61,10 +61,10 @@ func client_pool() {
 
 	for i := 0; i < 1000000; i++ {
 		go func(i int64) {
-			args := &protobuf.Test{}
+			args := &types.Test{}
 			args.A = i
 			args.B = i + 1
-			reply := new(protobuf.Test)
+			reply := new(types.Test)
 
 			err := cli.Call("TestHandler.Test", args, reply)
 			if err != nil {

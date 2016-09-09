@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/asyou-me/protorpc/protobuf"
+	"github.com/asyou-me/protorpc/types"
 
 	"github.com/asyou-me/protorpc"
 )

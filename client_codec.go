@@ -6,7 +6,7 @@ import (
 	"net/rpc"
 	"sync"
 
-	wire "github.com/asyou-me/protorpc/protobuf"
+	wire "github.com/asyou-me/protorpc/types"
 	"github.com/golang/protobuf/proto"
 )
 
