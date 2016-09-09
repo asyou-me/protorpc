@@ -15,7 +15,8 @@ import (
 )
 
 // 写入请求数据到 io.Writer
-func writeRequest(w io.Writer, id uint64, method string, request proto.Message) error {
+func writeRequest(c *clientCodec, id uint64, method string, request proto.Message) error {
+	w := c.w
 	// marshal request
 	pbRequest := []byte{}
 	if request != nil {
@@ -36,6 +37,7 @@ func writeRequest(w io.Writer, id uint64, method string, request proto.Message) 
 		RawRequestLen:              uint32(len(pbRequest)),
 		SnappyCompressedRequestLen: uint32(len(compressedPbRequest)),
 		Checksum:                   crc32.ChecksumIEEE(compressedPbRequest),
+		Token:                      c.Token,
 	}
 
 	// check header size
@@ -44,7 +46,7 @@ func writeRequest(w io.Writer, id uint64, method string, request proto.Message) 
 		return err
 	}
 	if len(pbHeader) > int(wire.Const_MAX_REQUEST_HEADER_LEN) {
-		return fmt.Errorf("protorpc.writeRequest: header larger than max_header_len: %d.", len(pbHeader))
+		return fmt.Errorf("protorpc.writeRequest: header larger than max_header_len: %d. ", len(pbHeader))
 	}
 
 	// send header (more)
@@ -87,7 +89,7 @@ func readRequestBody(r io.Reader, header *wire.RequestHeader, request proto.Mess
 
 	// checksum
 	if crc32.ChecksumIEEE(compressedPbRequest) != header.Checksum {
-		return fmt.Errorf("protorpc.readRequestBody: unexpected checksum.")
+		return fmt.Errorf("protorpc.readRequestBody: unexpected checksum. ")
 	}
 
 	// decode the compressed data
@@ -97,7 +99,7 @@ func readRequestBody(r io.Reader, header *wire.RequestHeader, request proto.Mess
 	}
 	// check wire header: rawMsgLen
 	if uint32(len(pbRequest)) != header.RawRequestLen {
-		return fmt.Errorf("protorpc.readRequestBody: Unexcpeted header.RawRequestLen.")
+		return fmt.Errorf("protorpc.readRequestBody: Unexcpeted header.RawRequestLen. ")
 	}
 
 	// Unmarshal to proto message

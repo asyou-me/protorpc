@@ -1,9 +1,5 @@
 package protorpc
 
-import (
-	"net/rpc"
-)
-
 // Element is an element of a linked list.
 type Element struct {
 	// Next and previous pointers in the doubly-linked list of elements.
@@ -17,7 +13,7 @@ type Element struct {
 	list *List
 
 	// The value stored with this element.
-	Value *rpc.Client
+	Value *Client
 }
 
 // Next returns the next list element or nil.
@@ -94,7 +90,7 @@ func (l *List) insert(e, at *Element) *Element {
 }
 
 // insertValue is a convenience wrapper for insert(&Element{Value: v}, at).
-func (l *List) insertValue(v *rpc.Client, at *Element) *Element {
+func (l *List) insertValue(v *Client, at *Element) *Element {
 	return l.insert(&Element{Value: v}, at)
 }
 
@@ -121,20 +117,20 @@ func (l *List) Remove(e *Element) interface{} {
 }
 
 // PushFront inserts a new element e with value v at the front of list l and returns e.
-func (l *List) PushFront(v *rpc.Client) *Element {
+func (l *List) PushFront(v *Client) *Element {
 	l.lazyInit()
 	return l.insertValue(v, &l.root)
 }
 
 // PushBack inserts a new element e with value v at the back of list l and returns e.
-func (l *List) PushBack(v *rpc.Client) *Element {
+func (l *List) PushBack(v *Client) *Element {
 	l.lazyInit()
 	return l.insertValue(v, l.root.prev)
 }
 
 // InsertBefore inserts a new element e with value v immediately before mark and returns e.
 // If mark is not an element of l, the list is not modified.
-func (l *List) InsertBefore(v *rpc.Client, mark *Element) *Element {
+func (l *List) InsertBefore(v *Client, mark *Element) *Element {
 	if mark.list != l {
 		return nil
 	}
@@ -144,7 +140,7 @@ func (l *List) InsertBefore(v *rpc.Client, mark *Element) *Element {
 
 // InsertAfter inserts a new element e with value v immediately after mark and returns e.
 // If mark is not an element of l, the list is not modified.
-func (l *List) InsertAfter(v *rpc.Client, mark *Element) *Element {
+func (l *List) InsertAfter(v *Client, mark *Element) *Element {
 	if mark.list != l {
 		return nil
 	}

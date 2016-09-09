@@ -2,15 +2,14 @@ package protorpc
 
 import (
 	"errors"
-	"net/rpc"
 	"sync"
 	"time"
 )
 
 // Pool rpc 连接池
 type Pool struct {
-	Dial          func() (*rpc.Client, error)
-	TestFunc      func(c *rpc.Client, t time.Time) error
+	Dial          func() (*Client, error)
+	TestFunc      func(c *Client, t time.Time) error
 	TestOnBorrow  bool
 	TestOnReturn  bool
 	TestWhileIdle bool
@@ -23,8 +22,8 @@ type Pool struct {
 }
 
 // NewPool 新建一个连接池
-func NewPool(Dial func() (*rpc.Client, error),
-	TestFunc func(c *rpc.Client, t time.Time) error, Max int) *Pool {
+func NewPool(Dial func() (*Client, error),
+	TestFunc func(c *Client, t time.Time) error, Max int) *Pool {
 	pool := &Pool{
 		Dial:     Dial,
 		TestFunc: TestFunc,
