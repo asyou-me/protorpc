@@ -58,7 +58,6 @@ type TestHandler struct {
 
 // Test 测试服务 方法
 func (h *TestHandler) Test(arg *types.Test, reply *types.Test) error {
-	//fmt.Println("test", arg)
 	reply.A = arg.A
 	reply.B = arg.B
 	reply.C = reply.A + reply.B
