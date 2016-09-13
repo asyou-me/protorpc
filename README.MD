@@ -127,9 +127,6 @@ func main() {
 						fmt.Println("Error:", err.Error())
 						t.Fatal("Error:", err.Error())
 					}
-					assert.Equal(t, args.A, reply.A, "args.A 不等于 reply.A ,多线程数据紊乱")
-					assert.Equal(t, args.B, reply.B, "args.B 不等于 reply.B ,多线程数据紊乱")
-					assert.Equal(t, reply.C, args.A+args.B, "reply.C 结果错误 ,服务端返回结果错误")
 
 					closeChan <- struct{}{}
 				}
