@@ -11,4 +11,4 @@ DIR="$( cd -P "$( dirname "$SOURCE"  )" && pwd  )"
 
 gogoproto_path="$GOPATH/src/"
 
-protoc "$DIR/api.proto" --gofast_out="$DIR/" --proto_path=${gogoproto_path} --proto_path="$DIR"
+protoc3 "$DIR/api.proto" --gofast_out="$DIR/" --proto_path=${gogoproto_path} --proto_path="$DIR"
