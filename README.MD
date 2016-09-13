@@ -2,7 +2,7 @@
 
 
 ## EXAMPLES
-server
+server:
 ```
 package main
 
@@ -58,8 +58,7 @@ func (h *TestHandler) Test(arg *types.Test, reply *types.Test) error {
 }
 ```
 
-client
-
+client:
 ```
 package main
 
@@ -89,8 +88,7 @@ func main() {
 }
 ```
 
-client_pool
-
+client_pool:
 ```
 package main
 
