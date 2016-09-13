@@ -53,7 +53,7 @@ func TestClientPool(t *testing.T) {
 					closeChan <- struct{}{}
 				}
 			}(int64(i))
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
