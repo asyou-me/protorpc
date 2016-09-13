@@ -8,8 +8,8 @@ import (
 )
 
 func main() {
-	//client()
-	client_pool()
+	client()
+	//client_pool()
 }
 
 func client() {
@@ -26,7 +26,7 @@ func client() {
 
 	defer cli.Close()
 
-	for i := 0; i < 1000; i++ {
+	/*for i := 0; i < 1000; i++ {
 		go func(i int64) {
 			defer func() {
 				if err := recover(); err != nil {
@@ -42,6 +42,15 @@ func client() {
 				fmt.Println(err.Error())
 			}
 		}(int64(i))
+	}*/
+	args := &types.Test{}
+	args.A = 1
+	args.B = 1
+	reply := new(types.Test)
+	data, _ := args.Marshal()
+	err = cli.Call("TestHandler.Test", args, reply)
+	if err != nil {
+		fmt.Println("Error:", err.Error())
 	}
 	<-close_chan
 }

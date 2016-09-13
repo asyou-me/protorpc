@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
 
@@ -20,8 +19,7 @@ func main() {
 
 	server.Register(h)
 	server.Auth(func(p *protorpc.AuthorizationHeader) error {
-		fmt.Println("wwwww")
-		return errors.New("www")
+		return nil
 	})
 
 	//  监听端口
@@ -52,7 +50,7 @@ type TestHandler struct {
 var i = 0
 
 // Test 测试服务 方法
-func (h *TestHandler) Test(arg *protobuf.Test, reply *protobuf.Test) error {
+func (h *TestHandler) Test(arg *types.Test, reply *types.Test) error {
 	//fmt.Println("test", arg)
 	reply.A = arg.A
 	reply.B = arg.B
