@@ -106,6 +106,7 @@ func (pool *Pool) put(c *Element) {
 func (pool *Pool) test(c *Element) {
 	pool.mutex.Lock()
 	c.Value.Close()
+	pool.Connected = pool.Connected - 1
 	pool.list.Remove(c)
 	pool.mutex.Unlock()
 }
