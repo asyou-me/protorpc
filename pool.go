@@ -22,8 +22,11 @@ type Pool struct {
 }
 
 // NewPool 新建一个连接池
-func NewPool(Dial func() (*Client, error),
-	TestFunc func(c *Client, t time.Time) error, Max int) *Pool {
+func NewPool(
+	Dial func() (*Client, error),
+	TestFunc func(c *Client, t time.Time) error,
+	Max int,
+) *Pool {
 	pool := &Pool{
 		Dial:     Dial,
 		TestFunc: TestFunc,
