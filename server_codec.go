@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	wire "github.com/asyou-me/protorpc/types"
+	types "github.com/asyou-me/protorpc/types"
 	"github.com/golang/protobuf/proto"
 )
 
@@ -18,7 +18,7 @@ type serverCodec struct {
 	c io.Closer
 
 	// temporary work space
-	reqHeader wire.RequestHeader
+	reqHeader types.RequestHeader
 
 	// Package rpc expects uint64 request IDs.
 	// We assign uint64 sequence numbers to incoming requests
@@ -45,7 +45,7 @@ func NewServerCodec(conn io.ReadWriteCloser, auth AuthorizationFunc) rpc.ServerC
 
 // ReadRequestHeader 读取请求头
 func (c *serverCodec) ReadRequestHeader(r *rpc.Request) error {
-	header := wire.RequestHeader{}
+	header := types.RequestHeader{}
 	err := readRequestHeader(c.r, &header)
 	if err != nil {
 		return err
@@ -94,7 +94,7 @@ func (c *serverCodec) ReadRequestBody(x interface{}) error {
 		return nil
 	}
 
-	c.reqHeader = wire.RequestHeader{}
+	c.reqHeader = types.RequestHeader{}
 	return nil
 }
 

@@ -6,7 +6,7 @@ import (
 	"net/rpc"
 	"sync"
 
-	wire "github.com/asyou-me/protorpc/types"
+	types "github.com/asyou-me/protorpc/types"
 	"github.com/golang/protobuf/proto"
 )
 
@@ -16,7 +16,7 @@ type clientCodec struct {
 	c io.Closer
 
 	// temporary work space
-	respHeader wire.ResponseHeader
+	respHeader types.ResponseHeader
 
 	// Protobuf-RPC responses include the request id but not the request method.
 	// Package rpc expects both.
@@ -65,7 +65,7 @@ func (c *clientCodec) WriteRequest(r *rpc.Request, param interface{}) error {
 }
 
 func (c *clientCodec) ReadResponseHeader(r *rpc.Response) error {
-	header := wire.ResponseHeader{}
+	header := types.ResponseHeader{}
 	err := readResponseHeader(c.r, &header)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func (c *clientCodec) ReadResponseBody(x interface{}) error {
 		return nil
 	}
 
-	c.respHeader = wire.ResponseHeader{}
+	c.respHeader = types.ResponseHeader{}
 	return nil
 }
 

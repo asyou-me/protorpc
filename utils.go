@@ -5,7 +5,7 @@ import (
 	"hash/crc32"
 	"io"
 
-	wire "github.com/asyou-me/protorpc/types"
+	types "github.com/asyou-me/protorpc/types"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
 )
@@ -27,7 +27,7 @@ func writeRequest(c *clientCodec, id uint64, method string, request proto.Messag
 	compressedPbRequest := snappy.Encode(nil, pbRequest)
 
 	// generate header
-	header := &wire.RequestHeader{
+	header := &types.RequestHeader{
 		Id:                         id,
 		Method:                     method,
 		RawRequestLen:              uint32(len(pbRequest)),
@@ -41,7 +41,7 @@ func writeRequest(c *clientCodec, id uint64, method string, request proto.Messag
 	if err != err {
 		return err
 	}
-	if len(pbHeader) > int(wire.Const_MAX_REQUEST_HEADER_LEN) {
+	if len(pbHeader) > int(types.Const_MAX_REQUEST_HEADER_LEN) {
 		return fmt.Errorf("protorpc.writeRequest: header larger than max_header_len: %d. ", len(pbHeader))
 	}
 
@@ -59,7 +59,7 @@ func writeRequest(c *clientCodec, id uint64, method string, request proto.Messag
 }
 
 // 读取请求中的头信息
-func readRequestHeader(r io.Reader, header *wire.RequestHeader) (err error) {
+func readRequestHeader(r io.Reader, header *types.RequestHeader) (err error) {
 	// recv header (more)
 	pbHeader, err := recvFrame(r)
 	if err != nil {
@@ -76,7 +76,7 @@ func readRequestHeader(r io.Reader, header *wire.RequestHeader) (err error) {
 }
 
 // 读取请求包内容
-func readRequestBody(r io.Reader, header *wire.RequestHeader, request proto.Message) error {
+func readRequestBody(r io.Reader, header *types.RequestHeader, request proto.Message) error {
 	// recv body (end)
 	compressedPbRequest, err := recvFrame(r)
 	if err != nil {
@@ -93,7 +93,7 @@ func readRequestBody(r io.Reader, header *wire.RequestHeader, request proto.Mess
 	if err != nil {
 		return err
 	}
-	// check wire header: rawMsgLen
+	// check types header: rawMsgLen
 	if uint32(len(pbRequest)) != header.RawRequestLen {
 		return fmt.Errorf("protorpc.readRequestBody: Unexcpeted header.RawRequestLen. ")
 	}
@@ -129,7 +129,7 @@ func writeResponse(w io.Writer, id uint64, serr string, response proto.Message) 
 	compressedPbResponse := snappy.Encode(nil, pbResponse)
 
 	// generate header
-	header := &wire.ResponseHeader{
+	header := &types.ResponseHeader{
 		Id:                          id,
 		Error:                       serr,
 		RawResponseLen:              uint32(len(pbResponse)),
@@ -157,7 +157,7 @@ func writeResponse(w io.Writer, id uint64, serr string, response proto.Message) 
 }
 
 // 读取结果的头信息
-func readResponseHeader(r io.Reader, header *wire.ResponseHeader) error {
+func readResponseHeader(r io.Reader, header *types.ResponseHeader) error {
 	// recv header (more)
 	pbHeader, err := recvFrame(r)
 	if err != nil {
@@ -174,7 +174,7 @@ func readResponseHeader(r io.Reader, header *wire.ResponseHeader) error {
 }
 
 // 读取结果的内容
-func readResponseBody(r io.Reader, header *wire.ResponseHeader, response proto.Message) error {
+func readResponseBody(r io.Reader, header *types.ResponseHeader, response proto.Message) error {
 	// recv body (end)
 	compressedPbResponse, err := recvFrame(r)
 	if err != nil {
@@ -191,7 +191,7 @@ func readResponseBody(r io.Reader, header *wire.ResponseHeader, response proto.M
 	if err != nil {
 		return err
 	}
-	// check wire header: rawMsgLen
+	// check types header: rawMsgLen
 	if uint32(len(pbResponse)) != header.RawResponseLen {
 		return fmt.Errorf("protorpc.readResponseBody: Unexcpeted header.RawResponseLen.")
 	}
