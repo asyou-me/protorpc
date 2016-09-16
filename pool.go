@@ -7,6 +7,7 @@ import (
 )
 
 // Pool rpc 连接池
+// Pool rpc 连接池
 type Pool struct {
 	Dial          func() (*Client, error)
 	TestFunc      func(c *Client, t time.Time) error
@@ -26,14 +27,23 @@ func NewPool(
 	Dial func() (*Client, error),
 	TestFunc func(c *Client, t time.Time) error,
 	Max int,
-) *Pool {
+) (*Pool, error) {
 	pool := &Pool{
 		Dial:     Dial,
 		TestFunc: TestFunc,
 		Max:      Max,
 	}
 	pool.Init()
-	return pool
+
+	element, err := pool.get()
+	if err != nil {
+		// 无法连接到时
+		return nil, err
+	}
+
+	// 使用完成之后将连接送回连接池
+	pool.put(element)
+	return pool, nil
 }
 
 // Init 初始化一个连接池
@@ -53,22 +63,24 @@ func (pool *Pool) Call(serviceMethod string, args interface{}, reply interface{}
 	}
 	// 使用完成之后将连接送回连接池
 	defer func() {
-		if err == nil {
-			pool.put(element)
-		} else {
+		if err := recover(); err != nil {
 			pool.test(element)
 		}
 	}()
 	err = element.Value.Call(serviceMethod, args, reply)
+	if err != nil {
+		pool.test(element)
+	} else {
+		pool.put(element)
+	}
 	return
 }
 
 // 从连接池获取一个连接
 func (pool *Pool) get() (*Element, error) {
 	pool.mutex.Lock()
-	item := pool.list.Front()
 	connected := pool.Connected
-	if item == nil {
+	if connected == 0 {
 		if connected >= pool.Max*2 {
 			pool.mutex.Unlock()
 			return nil, errors.New("连接数到达上限")
@@ -84,6 +96,7 @@ func (pool *Pool) get() (*Element, error) {
 			Value: cli,
 		}, nil
 	}
+	item := pool.list.Front()
 	pool.mutex.Unlock()
 	return item, nil
 }
@@ -92,15 +105,12 @@ func (pool *Pool) get() (*Element, error) {
 func (pool *Pool) put(c *Element) {
 	pool.mutex.Lock()
 	connected := pool.Connected
-	pool.mutex.Unlock()
 	if connected >= pool.Max {
-		pool.mutex.Lock()
 		pool.Connected = pool.Connected - 1
 		pool.mutex.Unlock()
 		c.Value.Close()
 	} else {
-		pool.mutex.Lock()
-		pool.list.PushBack(c.Value)
+		pool.list.PushBack(c)
 		pool.mutex.Unlock()
 	}
 }

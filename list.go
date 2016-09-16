@@ -90,8 +90,8 @@ func (l *List) insert(e, at *Element) *Element {
 }
 
 // insertValue is a convenience wrapper for insert(&Element{Value: v}, at).
-func (l *List) insertValue(v *Client, at *Element) *Element {
-	return l.insert(&Element{Value: v}, at)
+func (l *List) insertValue(v *Element, at *Element) *Element {
+	return l.insert(v, at)
 }
 
 // remove removes e from its list, decrements l.len, and returns e.
@@ -116,90 +116,8 @@ func (l *List) Remove(e *Element) interface{} {
 	return e.Value
 }
 
-// PushFront inserts a new element e with value v at the front of list l and returns e.
-func (l *List) PushFront(v *Client) *Element {
-	l.lazyInit()
-	return l.insertValue(v, &l.root)
-}
-
 // PushBack inserts a new element e with value v at the back of list l and returns e.
-func (l *List) PushBack(v *Client) *Element {
+func (l *List) PushBack(v *Element) *Element {
 	l.lazyInit()
 	return l.insertValue(v, l.root.prev)
-}
-
-// InsertBefore inserts a new element e with value v immediately before mark and returns e.
-// If mark is not an element of l, the list is not modified.
-func (l *List) InsertBefore(v *Client, mark *Element) *Element {
-	if mark.list != l {
-		return nil
-	}
-	// see comment in List.Remove about initialization of l
-	return l.insertValue(v, mark.prev)
-}
-
-// InsertAfter inserts a new element e with value v immediately after mark and returns e.
-// If mark is not an element of l, the list is not modified.
-func (l *List) InsertAfter(v *Client, mark *Element) *Element {
-	if mark.list != l {
-		return nil
-	}
-	// see comment in List.Remove about initialization of l
-	return l.insertValue(v, mark)
-}
-
-// MoveToFront moves element e to the front of list l.
-// If e is not an element of l, the list is not modified.
-func (l *List) MoveToFront(e *Element) {
-	if e.list != l || l.root.next == e {
-		return
-	}
-	// see comment in List.Remove about initialization of l
-	l.insert(l.remove(e), &l.root)
-}
-
-// MoveToBack moves element e to the back of list l.
-// If e is not an element of l, the list is not modified.
-func (l *List) MoveToBack(e *Element) {
-	if e.list != l || l.root.prev == e {
-		return
-	}
-	// see comment in List.Remove about initialization of l
-	l.insert(l.remove(e), l.root.prev)
-}
-
-// MoveBefore moves element e to its new position before mark.
-// If e or mark is not an element of l, or e == mark, the list is not modified.
-func (l *List) MoveBefore(e, mark *Element) {
-	if e.list != l || e == mark || mark.list != l {
-		return
-	}
-	l.insert(l.remove(e), mark.prev)
-}
-
-// MoveAfter moves element e to its new position after mark.
-// If e or mark is not an element of l, or e == mark, the list is not modified.
-func (l *List) MoveAfter(e, mark *Element) {
-	if e.list != l || e == mark || mark.list != l {
-		return
-	}
-	l.insert(l.remove(e), mark)
-}
-
-// PushBackList inserts a copy of an other list at the back of list l.
-// The lists l and other may be the same.
-func (l *List) PushBackList(other *List) {
-	l.lazyInit()
-	for i, e := other.Len(), other.Front(); i > 0; i, e = i-1, e.Next() {
-		l.insertValue(e.Value, l.root.prev)
-	}
-}
-
-// PushFrontList inserts a copy of an other list at the front of list l.
-// The lists l and other may be the same.
-func (l *List) PushFrontList(other *List) {
-	l.lazyInit()
-	for i, e := other.Len(), other.Back(); i > 0; i, e = i-1, e.Prev() {
-		l.insertValue(e.Value, &l.root)
-	}
 }
