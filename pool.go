@@ -7,7 +7,6 @@ import (
 )
 
 // Pool rpc 连接池
-// Pool rpc 连接池
 type Pool struct {
 	Dial          func() (*Client, error)
 	TestFunc      func(c *Client, t time.Time) error
